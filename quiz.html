@@ -1,0 +1,335 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100vw;
+    height: 100vh;
+    background: #fff;
+    font-family: Arial, 'Noto Sans Gujarati', sans-serif;
+    overflow: hidden;
+}
+#blog-quiz-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #fff;
+    border: 8px solid #ffc107;
+    z-index: 9999;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+.quiz-header {
+    display: flex;
+    align-items: flex-end;
+    margin-top: 2vw;
+    margin-bottom: 2vw;
+    width: 90vw;
+}
+#quiz-progress {
+    font-size: 4vw;
+    color: #e53935;
+    font-weight: 600;
+    margin-right: 1vw;
+    font-family: inherit;
+    line-height: 1;
+    min-width: 3vw;
+}
+#quiz-question {
+    font-size: 2.5vw;
+    font-weight: 500;
+    color: #111;
+    font-family: inherit;
+    line-height: 1.2;
+    flex: 1;
+    word-break: break-word;
+}
+.quiz-file-row {
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2vw;
+}
+input[type="file"] {
+    font-size: 1.5vw;
+    margin: 0.5vw 0 2vw 0;
+    padding: 0.5vw 1vw;
+    border: 1px solid #aaa;
+    border-radius: 0.4vw;
+}
+.quiz-options {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 2vw 0;
+    width: 85vw;
+}
+.quiz-option {
+    display: flex;
+    align-items: center;
+    font-size: 2.3vw;
+    color: #111;
+    background: #fff;
+    border: none;
+    margin: 1vw 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s, color 0.2s;
+    outline: none;
+    gap: 1vw;
+    min-height: 3vw;
+}
+.quiz-option .bullet {
+    font-size: 2vw;
+    margin-right: 1vw;
+}
+.quiz-option .option-text {
+    transition: color 0.2s;
+}
+.quiz-option .option-text.correct-clicked {
+    color: #09ac3c !important;
+    font-weight: 700;
+}
+.quiz-option .option-text.incorrect-clicked {
+    color: #e53935 !important;
+    font-weight: 700;
+}
+.quiz-option .option-text.correct-reveal {
+    color: #09ac3c !important;
+    font-weight: 700;
+}
+.quiz-option .encourage {
+    color: #09ac3c;
+    font-size: 4.6vw;
+    margin-left: 1vw;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
+.quiz-option .missed {
+    color: #e53935;
+    font-size: 4.6vw;
+    margin-left: 1vw;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
+.next-btn {
+    position: absolute;
+    bottom: 3vw;
+    right: 3vw;
+    border: 1.5px solid #222;
+    background: #fff;
+    width: 4vw;
+    height: 4vw;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5vw;
+    cursor: pointer;
+}
+.next-btn .arrow {
+    color: #e53935;
+    font-size: 2.5vw;
+}
+.quiz-error-message {
+    font-size: 2vw;
+    color: #e53935;
+    margin: 2vw 0;
+    text-align: center;
+}
+@media (max-width: 900px) {
+    #quiz-progress { font-size: 7vw; }
+    #quiz-question { font-size: 4vw; }
+    .quiz-option { font-size: 4vw; }
+    .quiz-option .encourage { font-size: 8vw; }
+    .quiz-option .missed { font-size: 8vw; }
+    .quiz-option .bullet { font-size: 2.5vw; }
+    .next-btn, .next-btn .arrow { font-size: 4vw; width: 8vw; height: 8vw; }
+    .quiz-header, #blog-quiz-overlay { padding: 0 2vw; }
+}
+</style>
+
+<div id="blog-quiz-overlay">
+    <div class="quiz-header">
+        <span id="quiz-progress">1/5</span>
+        <span id="quiz-question"></span>
+    </div>
+    <div class="quiz-file-row">
+        <input type="file" id="csv-file" accept=".csv" />
+    </div>
+    <div id="quiz-error" class="quiz-error-message"></div>
+    <ul id="quiz-options" class="quiz-options"></ul>
+    <button id="next-btn" class="next-btn" style="display:none;">
+        <span class="arrow">&#9654;</span>
+    </button>
+</div>
+
+<script>
+let questions = [];
+let currentQuestion = 0;
+let selectedOption = null;
+let isAnswered = false;
+
+const encouragements = [
+    "Good!", "Great!", "Awesome!", "Excellent!", "Wow!",
+    "Keep Going!", "Way to GO!", "Superb!", "God Bless!", "Best!"
+];
+
+function showError(msg) {
+    document.getElementById('quiz-error').textContent = msg;
+}
+
+function clearError() {
+    document.getElementById('quiz-error').textContent = "";
+}
+
+if (typeof Papa === "undefined") {
+    showError("PapaParse library failed to load. The quiz cannot work. Try reloading the page or check your internet connection.");
+} else {
+    document.getElementById('csv-file').addEventListener('change', function (e) {
+        clearError();
+        const file = e.target.files[0];
+        if (!file) return;
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function (results) {
+                try {
+                    if (!results.data || !Array.isArray(results.data)) {
+                        showError("No data found in CSV.");
+                        return;
+                    }
+                    questions = results.data
+                        .filter(row =>
+                            row.question &&
+                            row.option1 && row.option2 &&
+                            row.option3 && row.option4 &&
+                            row.answer &&
+                            !isNaN(parseInt(row.answer, 10))
+                        )
+                        .map(row => ({
+                            question: row.question.trim(),
+                            options: [
+                                row.option1.trim(),
+                                row.option2.trim(),
+                                row.option3.trim(),
+                                row.option4.trim()
+                            ],
+                            answer: parseInt(row.answer, 10) - 1
+                        }));
+
+                    if (questions.length === 0) {
+                        showError("No valid questions found. Required headers: question, option1, option2, option3, option4, answer. Sample row: What is 2+2?,3,4,5,6,2");
+                        return;
+                    }
+                    currentQuestion = 0;
+                    selectedOption = null;
+                    isAnswered = false;
+                    renderQuestion();
+                } catch (err) {
+                    showError("Error parsing questions: " + err.message);
+                }
+            },
+            error: function (err) {
+                showError("Error parsing CSV: " + err.message);
+            }
+        });
+    });
+}
+
+function renderQuestion() {
+    if (!questions.length) {
+        document.getElementById('quiz-progress').textContent = "0/0";
+        document.getElementById('quiz-question').textContent = "";
+        document.getElementById('quiz-options').innerHTML = "";
+        document.getElementById('next-btn').style.display = "none";
+        return;
+    }
+    clearError();
+    isAnswered = false;
+    selectedOption = null;
+    const q = questions[currentQuestion];
+    document.getElementById('quiz-progress').textContent = `${currentQuestion + 1}/${questions.length}`;
+    document.getElementById('quiz-question').textContent = q.question;
+    const optionsList = document.getElementById('quiz-options');
+    optionsList.innerHTML = "";
+    q.options.forEach((option, idx) => {
+        const li = document.createElement('li');
+        li.className = 'quiz-option';
+        li.innerHTML = `<span class="bullet">•</span><span class="option-text">${option}</span>`;
+        li.onclick = function () {
+            if (!isAnswered) { selectOption(idx); }
+        };
+        optionsList.appendChild(li);
+    });
+    document.getElementById('next-btn').style.display = "none";
+}
+
+function selectOption(idx) {
+    selectedOption = idx;
+    isAnswered = true;
+    const q = questions[currentQuestion];
+    const options = document.querySelectorAll('.quiz-option');
+    const encouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
+    options.forEach((li, i) => {
+        li.onclick = null;
+        let optionText = li.querySelector('.option-text');
+        optionText.classList.remove('correct-clicked', 'correct-reveal', 'incorrect-clicked');
+        let encourage = li.querySelector('.encourage');
+        if (encourage) encourage.remove();
+        let missed = li.querySelector('.missed');
+        if (missed) missed.remove();
+
+        // If user clicked correct answer
+        if (selectedOption === q.answer && i === selectedOption) {
+            optionText.classList.add('correct-clicked');
+            const encourageSpan = document.createElement('span');
+            encourageSpan.className = 'encourage';
+            encourageSpan.textContent = encouragement;
+            li.appendChild(encourageSpan);
+        }
+        // If user clicked wrong answer
+        if (selectedOption !== q.answer) {
+            if (i === selectedOption) {
+                optionText.classList.add('incorrect-clicked');
+                const missedSpan = document.createElement('span');
+                missedSpan.className = 'missed';
+                missedSpan.textContent = 'missed it';
+                li.appendChild(missedSpan);
+            }
+            if (i === q.answer) {
+                optionText.classList.add('correct-reveal');
+            }
+        }
+    });
+    document.getElementById('next-btn').style.display = "";
+}
+
+document.getElementById('next-btn').addEventListener('click', function () {
+    if (!isAnswered) {
+        alert("Please select an option before continuing.");
+        return;
+    }
+    if (currentQuestion < questions.length - 1) {
+        currentQuestion++;
+        selectedOption = null;
+        isAnswered = false;
+        renderQuestion();
+    } else {
+        showQuizEnd();
+    }
+});
+
+function showQuizEnd() {
+    document.getElementById('quiz-progress').textContent = "Finished";
+    document.getElementById('quiz-question').textContent = "Quiz Complete!";
+    document.getElementById('quiz-options').innerHTML = "";
+    document.getElementById('next-btn').style.display = "none";
+}
+</script>
